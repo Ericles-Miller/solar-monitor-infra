@@ -1,0 +1,114 @@
+# Cria o bucket S3 que guarda o estado do Terraform de todos os ambientes.
+# Roda uma única vez, com estado local (este diretório não tem backend remoto: o bucket ainda não existe).
+
+provider "aws" {
+  region = var.region
+
+  default_tags {
+    tags = {
+      Project    = "solar-monitor"
+      ManagedBy  = "terraform"
+      Repository = "solar-monitor-infra"
+    }
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  # O nome de bucket é global na AWS: o id da conta evita colisão.
+  bucket_name = "solar-monitor-tfstate-${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_s3_bucket" "state" {
+  bucket = local.bucket_name
+
+  # Apagar o bucket apaga o estado de todos os ambientes.
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# O versionamento permite recuperar um estado anterior se um apply estragar o atual.
+resource "aws_s3_bucket_versioning" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    id     = "expirar-versoes-antigas"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.state]
+}
+
+# O estado tem endereços e ids de recursos: só aceitar acesso por HTTPS.
+data "aws_iam_policy_document" "state" {
+  statement {
+    sid     = "SomenteHTTPS"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.state.arn,
+      "${aws_s3_bucket.state.arn}/*",
+    ]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "state" {
+  bucket = aws_s3_bucket.state.id
+  policy = data.aws_iam_policy_document.state.json
+
+  depends_on = [aws_s3_bucket_public_access_block.state]
+}
