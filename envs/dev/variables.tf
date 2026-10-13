@@ -10,6 +10,6 @@ variable "budget_limit_usd" {
 }
 
 variable "budget_alert_emails" {
-  description = "Quem recebe os alertas de custo."
+  description = "Quem recebe os alertas de custo. Vem de TF_VAR_budget_alert_emails, fora do repositório."
   type        = list(string)
 }

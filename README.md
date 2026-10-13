@@ -54,9 +54,32 @@ Versione o `envs/dev/backend.hcl`: ele só tem o nome do bucket, que não é seg
 
 ### 3. Preencher os valores do dev
 
-Em `envs/dev/terraform.tfvars`, coloque em `budget_alert_emails` quem recebe os alertas de custo. Vazio, o `plan` para com "Informe ao menos um e-mail válido".
+Quem recebe os alertas de custo **não fica no repositório**: vem da variável de ambiente `TF_VAR_budget_alert_emails`, uma lista em formato HCL. Coloque no seu `~/.zshrc` (ou equivalente):
 
-### 4. Subir o dev
+```sh
+export TF_VAR_budget_alert_emails='["voce@exemplo.com"]'
+```
+
+- **Não** defina `budget_alert_emails` no `terraform.tfvars`: o arquivo tem prioridade sobre o ambiente e esconderia o valor exportado.
+- Sem a variável, o `plan` pergunta o valor (ou para com erro, com `-input=false`). Lista vazia ou e-mail inválido param com "Informe ao menos um e-mail válido".
+- Para trocar quem recebe, mude a variável e rode `plan` + `apply`: a assinatura só muda na AWS depois do `apply`. Quem rodar o `apply` com outro valor troca os destinatários.
+- O e-mail fica gravado no estado (no S3), não no git.
+
+### 4. Liberar o custo na conta de gerenciamento (manual, uma vez)
+
+A conta do dev (`779257801295`) é **membro de uma AWS Organization**. Orçamentos, Cost Explorer e tags de custo são controlados pela **conta de gerenciamento** (a pagadora, `471112556317`). Sem a liberação abaixo, o `apply` do orçamento falha com `AccessDeniedException: Account ... is a linked account`.
+
+Logado na **conta de gerenciamento** (não na do dev):
+
+1. **Billing and Cost Management** → **Cost Explorer**: abra uma vez para ativá-lo.
+2. **Billing and Cost Management** → **Cost Management preferences** → **Linked account access**: dê às contas-membro acesso ao Cost Explorer e aos orçamentos.
+3. **Billing and Cost Management** → **Cost allocation tags** → **User-defined cost allocation tags**: marque **`Project`** e clique em **Activate**.
+
+O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, para não misturar com outros projetos. A tag só aparece na lista do passo 3 depois que a AWS processa a cobrança de algum recurso com ela (até 24 h), e a ativação pode levar mais 24 h para valer. **Até lá, o orçamento mostra custo zero e não alerta.**
+
+Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --account-id <id-da-conta-dev>` não pode responder `AccessDeniedException`.
+
+### 5. Subir o dev
 
 ```sh
 terraform -chdir=envs/dev init -backend-config=backend.hcl
@@ -65,15 +88,6 @@ terraform -chdir=envs/dev apply dev.tfplan
 ```
 
 Leia o `plan` antes de aplicar. O `apply` cria recursos reais e cobrados.
-
-### 5. Ativar a tag de custo (manual, uma vez)
-
-O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, para não misturar com outros projetos da conta. A AWS só considera a tag depois de ativada:
-
-1. Console da AWS → **Billing and Cost Management** → **Cost allocation tags**.
-2. Em **User-defined cost allocation tags**, marque **`Project`** e clique em **Activate**.
-
-A tag só aparece na lista depois que existe algum recurso com ela, e a ativação pode levar até 24 h para valer. **Até lá, o orçamento mostra custo zero e não alerta.** Os e-mails cadastrados também precisam aceitar a mensagem de confirmação da AWS, se ela vier.
 
 ## Dia a dia
 
@@ -98,4 +112,3 @@ terraform -chdir=modules/budget test
 - `terraform apply` e `destroy` só com o plano lido e conferido.
 - O backend roda com **uma única tarefa**: o coletor fica dentro do processo e duas instâncias dobrariam as chamadas à Sungrow.
 - O dev guarda dados **reais** da UFV JAC 03. Cuidado com `destroy`.
-# solar-monitor-infra

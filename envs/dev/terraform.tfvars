@@ -5,5 +5,5 @@ region = "sa-east-1"
 # Decidido pelo Ericles em 12/10/2026.
 budget_limit_usd = 50
 
-# Preencha antes do primeiro plan: vazio, o plan para com "Informe ao menos um e-mail válido".
-budget_alert_emails = []
+# budget_alert_emails vem da variável de ambiente TF_VAR_budget_alert_emails (ver README).
+# Não defina aqui: este arquivo tem prioridade sobre o ambiente e esconderia o valor exportado.
