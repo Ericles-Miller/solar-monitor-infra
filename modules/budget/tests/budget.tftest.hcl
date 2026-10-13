@@ -2,16 +2,16 @@
 mock_provider "aws" {}
 
 variables {
-  name         = "solar-monitor-mensal"
-  limit_usd    = 50
-  alert_emails = ["alertas@exemplo.com"]
+  budget_name         = "solar-monitor-dev-mensal"
+  budget_limit_usd    = 50
+  budget_alert_emails = ["alertas@exemplo.com"]
 }
 
 run "filtra_pela_tag_do_projeto" {
   command = plan
 
   variables {
-    cost_filter_tag = {
+    budget_cost_filter_tag = {
       key   = "Project"
       value = "solar-monitor"
     }
@@ -38,7 +38,7 @@ run "sem_filtro_conta_a_conta_inteira" {
 
   assert {
     condition     = length(aws_budgets_budget.monthly.cost_filter) == 0
-    error_message = "Sem cost_filter_tag, o orçamento não pode ter filtro."
+    error_message = "Sem budget_cost_filter_tag, o orçamento não pode ter filtro."
   }
 }
 
@@ -46,28 +46,28 @@ run "recusa_lista_de_emails_vazia" {
   command = plan
 
   variables {
-    alert_emails = []
+    budget_alert_emails = []
   }
 
-  expect_failures = [var.alert_emails]
+  expect_failures = [var.budget_alert_emails]
 }
 
 run "recusa_email_invalido" {
   command = plan
 
   variables {
-    alert_emails = ["nao-e-email"]
+    budget_alert_emails = ["nao-e-email"]
   }
 
-  expect_failures = [var.alert_emails]
+  expect_failures = [var.budget_alert_emails]
 }
 
 run "recusa_limite_zero" {
   command = plan
 
   variables {
-    limit_usd = 0
+    budget_limit_usd = 0
   }
 
-  expect_failures = [var.limit_usd]
+  expect_failures = [var.budget_limit_usd]
 }

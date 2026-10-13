@@ -1,19 +1,34 @@
-# Terraform
-.terraform/
+# Diretórios locais do Terraform
+**/.terraform/*
+
+# Estado e planos (o estado do dev fica no S3; o do bootstrap, local)
 *.tfstate
 *.tfstate.*
 *.tfplan
+
+# Logs de crash
 crash.log
 crash.*.log
+
+# Arquivos .tfvars podem ter dado sensível: valores fixos vão nos defaults do variables.tf
+*.tfvars
+*.tfvars.json
+
+# Arquivos de override são para uso local
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Valores locais de cada pessoa (nunca versionar)
-*.local.tfvars
+# Configuração local da CLI
+.terraformrc
+terraform.rc
+
+# Variáveis locais de cada pessoa
 .env
 .env.*
 
 # Sistema
 .DS_Store
+
+# O .terraform.lock.hcl é versionado: fixa o provider e os hashes para todo mundo.
