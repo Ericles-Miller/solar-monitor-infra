@@ -23,8 +23,11 @@ Módulos de hoje:
 | Módulo | Task | O que cria |
 |---|---|---|
 | `budget` | MS-87 | Orçamento mensal com alerta de custo por e-mail |
+| `network` | MS-88 | VPC em 2 zonas (sub-redes públicas e privadas, sem NAT), rotas e os security groups do ALB, das tarefas e do banco |
+| `alb` | MS-88 | ALB com os target groups do backend e do frontend e os listeners HTTP (`:80` → frontend, `:8080` → backend) |
+| `ecs_cluster` | MS-88 | Cluster ECS (Fargate) e os grupos de log de cada serviço |
 
-Os próximos entram com as tasks do épico MS-6: rede, ALB e cluster ECS (MS-88), banco RDS (MS-89), bucket dos avatares (MS-90), SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
+Os próximos entram com as tasks do épico MS-6: banco RDS (MS-89), bucket dos avatares (MS-90), SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
 
 ### Convenções
 
@@ -103,9 +106,12 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-terraform -chdir=modules/budget init
-terraform -chdir=modules/budget test
+for m in budget network alb ecs_cluster; do
+  terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
+done
 ```
+
+Cada módulo tem o próprio `.terraform.lock.hcl`, **cópia do lock da raiz**, para os testes rodarem com a mesma versão do provider do ambiente. Ao trocar a versão do provider na raiz, copie o lock novo para os módulos.
 
 ## Regras
 
