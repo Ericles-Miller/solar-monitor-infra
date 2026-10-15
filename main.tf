@@ -43,3 +43,10 @@ module "ecs_cluster" {
   source           = "./modules/ecs_cluster"
   ecs_cluster_name = local.name_prefix
 }
+
+# Avatares dos usuários (MS-90). O id da conta deixa o nome único no mundo todo, como no bucket do estado.
+module "avatars" {
+  source              = "./modules/avatars"
+  avatars_bucket_name = "${local.name_prefix}-avatars-${data.aws_caller_identity.current.account_id}"
+  avatars_region      = var.aws_region
+}
