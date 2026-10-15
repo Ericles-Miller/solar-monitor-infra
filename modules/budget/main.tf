@@ -9,14 +9,15 @@ locals {
 }
 
 resource "aws_budgets_budget" "monthly" {
-  name         = var.name
+  name         = var.budget_name
   budget_type  = "COST"
-  limit_amount = format("%.1f", var.limit_usd)
+  limit_amount = format("%.1f", var.budget_limit_usd)
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
+  tags         = var.budget_tags
 
   dynamic "cost_filter" {
-    for_each = var.cost_filter_tag == null ? [] : [var.cost_filter_tag]
+    for_each = var.budget_cost_filter_tag == null ? [] : [var.budget_cost_filter_tag]
 
     content {
       name = "TagKeyValue"
@@ -33,7 +34,7 @@ resource "aws_budgets_budget" "monthly" {
       threshold                  = notification.value.threshold
       threshold_type             = "PERCENTAGE"
       notification_type          = notification.value.type
-      subscriber_email_addresses = var.alert_emails
+      subscriber_email_addresses = var.budget_alert_emails
     }
   }
 }
