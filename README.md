@@ -29,8 +29,11 @@ Módulos de hoje:
 | `avatars` | MS-90 | Bucket S3 dos avatares: leitura pública só de `avatars/*`, sem ACL, criptografado, sem versões e só por HTTPS |
 | `database` | MS-89 | RDS PostgreSQL 15 nas sub-redes privadas; senha gerada pelo Terraform, fora do estado, no Parameter Store, sem troca automática |
 | `email` | MS-91 | SES: remetente verificado, usuário SMTP que só envia com ele e os parâmetros `MAIL_USER` e `MAIL_PASSWORD` (preenchidos por `scripts/ses-smtp-credentials.sh`) |
+| `ecr` | MS-28 | Repositório de imagens com tag imutável, scan ao enviar e só as 10 últimas imagens |
+| `ecs_service` | MS-28 | Serviço Fargate genérico atrás do ALB: papéis IAM, task definition com segredos do Parameter Store, health check, ECS Exec e rollback automático |
+| `backend_secrets` | MS-28 | Segredos do backend: JWT gerados pelo Terraform e as credenciais da Sungrow (preenchidas por `scripts/backend-secrets.sh`) |
 
-Os próximos entram com as tasks do épico MS-6: backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
+Os próximos entram com as tasks do épico MS-6: frontend no ECS (MS-29, reaproveitando `ecr` e `ecs_service`), scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
 
 ### Convenções
 
@@ -126,7 +129,7 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb ecs_cluster avatars database email; do
+for m in budget network alb ecs_cluster avatars database email ecr ecs_service backend_secrets; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```

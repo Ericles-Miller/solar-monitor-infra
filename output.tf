@@ -121,3 +121,14 @@ output "mail" {
   sensitive   = false
   description = "E-mail do backend: MAIL_HOST, MAIL_PORT, MAIL_SECURE, MAIL_FROM e os parâmetros de MAIL_USER e MAIL_PASSWORD"
 }
+
+output "backend" {
+  value = {
+    ecr_repository_url = module.backend_ecr.repository_url
+    cluster            = module.ecs_cluster.cluster_name
+    service            = module.backend.service_name
+    container          = module.backend.container_name
+  }
+  sensitive   = false
+  description = "Backend no ECS: repositório da imagem, cluster, serviço e contêiner (para o deploy e o ECS Exec)"
+}
