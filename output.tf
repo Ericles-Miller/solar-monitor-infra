@@ -83,3 +83,15 @@ output "log_group_names" {
   sensitive   = false
   description = "Grupos de log do CloudWatch por serviço"
 }
+
+output "avatars_bucket_name" {
+  value       = module.avatars.bucket_name
+  sensitive   = false
+  description = "Bucket dos avatares (S3_BUCKET do backend)"
+}
+
+output "avatars_public_url" {
+  value       = module.avatars.public_url
+  sensitive   = false
+  description = "Endereço público dos avatares (S3_PUBLIC_URL do backend)"
+}
