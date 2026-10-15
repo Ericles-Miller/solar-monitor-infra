@@ -59,3 +59,13 @@ module "database" {
   database_security_group_id       = module.network.database_security_group_id
   database_password_parameter_name = "/${local.project}/${var.environment}/DB_PASSWORD"
 }
+
+# E-mail do backend pelo SES (MS-91). Sem domínio, o remetente é um endereço verificado (por enquanto, só para teste).
+module "email" {
+  source                 = "./modules/email"
+  email_name_prefix      = local.name_prefix
+  email_region           = var.aws_region
+  email_sender_address   = var.mail_sender_email
+  email_test_recipients  = var.mail_test_recipients
+  email_parameter_prefix = "/${local.project}/${var.environment}"
+}

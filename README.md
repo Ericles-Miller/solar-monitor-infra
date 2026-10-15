@@ -28,8 +28,9 @@ Módulos de hoje:
 | `ecs_cluster` | MS-88 | Cluster ECS (Fargate) e os grupos de log de cada serviço |
 | `avatars` | MS-90 | Bucket S3 dos avatares: leitura pública só de `avatars/*`, sem ACL, criptografado, sem versões e só por HTTPS |
 | `database` | MS-89 | RDS PostgreSQL 15 nas sub-redes privadas; senha gerada pelo Terraform, fora do estado, no Parameter Store, sem troca automática |
+| `email` | MS-91 | SES: remetente verificado, usuário SMTP que só envia com ele e os parâmetros `MAIL_USER` e `MAIL_PASSWORD` (preenchidos por `scripts/ses-smtp-credentials.sh`) |
 
-Os próximos entram com as tasks do épico MS-6: SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
+Os próximos entram com as tasks do épico MS-6: backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
 
 ### Convenções
 
@@ -71,7 +72,24 @@ export TF_VAR_budget_alert_emails='["voce@exemplo.com"]'
 - Para trocar quem recebe, mude a variável e rode `plan` + `apply`: a assinatura só muda na AWS depois do `apply`. Quem rodar o `apply` com outro valor troca os destinatários.
 - O e-mail fica gravado no estado (no S3), não no git.
 
-### 3. Liberar o custo na conta de gerenciamento (manual, uma vez)
+### 3. Remetente dos e-mails
+
+Como o e-mail do alerta, o remetente do backend e os destinatários de teste do sandbox do SES vêm de variáveis de ambiente:
+
+```sh
+export TF_VAR_mail_sender_email='voce@exemplo.com'
+export TF_VAR_mail_test_recipients='["outro@exemplo.com"]'   # opcional
+```
+
+Depois do primeiro `apply`, a AWS manda um link de confirmação para cada endereço: clique nele. Em seguida, rode uma vez:
+
+```sh
+scripts/ses-smtp-credentials.sh
+```
+
+Ele cria a chave do usuário SMTP e grava `MAIL_USER` e `MAIL_PASSWORD` no Parameter Store, sem mostrar nada. Para trocar a chave: `scripts/ses-smtp-credentials.sh --replace` e reinicie o backend.
+
+### 4. Liberar o custo na conta de gerenciamento (manual, uma vez)
 
 A conta do dev (`779257801295`) é **membro de uma AWS Organization**. Orçamentos, Cost Explorer e tags de custo são controlados pela **conta de gerenciamento** (a pagadora, `471112556317`). Sem a liberação abaixo, o `apply` do orçamento falha com `AccessDeniedException: Account ... is a linked account`.
 
@@ -85,7 +103,7 @@ O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, par
 
 Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --account-id <id-da-conta-dev> --profile ericles-dev` não pode responder `AccessDeniedException`.
 
-### 4. Subir o dev
+### 5. Subir o dev
 
 ```sh
 terraform init
@@ -108,7 +126,7 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb ecs_cluster avatars database; do
+for m in budget network alb ecs_cluster avatars database email; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```
