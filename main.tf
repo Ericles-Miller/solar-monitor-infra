@@ -50,3 +50,12 @@ module "avatars" {
   avatars_bucket_name = "${local.name_prefix}-avatars-${data.aws_caller_identity.current.account_id}"
   avatars_region      = var.aws_region
 }
+
+# Banco do backend (MS-89). A senha não fica no estado e o RDS não a troca sozinho (decisão de 15/10/2026).
+module "database" {
+  source                           = "./modules/database"
+  database_name_prefix             = local.name_prefix
+  database_subnet_ids              = module.network.private_subnet_ids
+  database_security_group_id       = module.network.database_security_group_id
+  database_password_parameter_name = "/${local.project}/${var.environment}/DB_PASSWORD"
+}

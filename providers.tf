@@ -1,11 +1,17 @@
 terraform {
   # >= 1.10: a trava do estado usa o lockfile nativo do S3 (use_lockfile), sem DynamoDB.
-  required_version = ">= 1.10"
+  # >= 1.11: a senha do banco usa atributos write-only (não ficam no estado), MS-89.
+  required_version = ">= 1.11"
 
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = "6.68.0"
+    }
+    # Gera a senha do banco sem gravá-la no estado (recurso ephemeral, MS-89).
+    random = {
+      source  = "hashicorp/random"
+      version = "3.9.1"
     }
   }
 

@@ -95,3 +95,15 @@ output "avatars_public_url" {
   sensitive   = false
   description = "Endereço público dos avatares (S3_PUBLIC_URL do backend)"
 }
+
+output "database" {
+  value = {
+    host                    = module.database.address
+    port                    = module.database.port
+    name                    = module.database.db_name
+    username                = module.database.username
+    password_parameter_name = module.database.password_parameter_name
+  }
+  sensitive   = false
+  description = "Conexão do backend com o banco (DB_HOST, DB_PORT, DB_NAME, DB_USERNAME e o parâmetro do DB_PASSWORD)"
+}
