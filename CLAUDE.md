@@ -21,6 +21,7 @@ Infraestrutura do projeto "Monitoramento de Usinas Solares" na AWS, com Terrafor
 - Nomes de recurso: `solar-monitor-${var.environment}-<nome>`. Tags comuns pelas `default_tags` do provider.
 - Valores fixos no `default` do `variables.tf`; `*.tfvars` fora do git. O e-mail do alerta vem de `TF_VAR_budget_alert_emails`.
 - Provider com **versão exata** no `providers.tf` e `.terraform.lock.hcl` versionado.
+- Cada módulo com `tests/` tem um `.terraform.lock.hcl` **copiado da raiz** (os módulos não declaram versão): sem ele, o `init` do teste pega o provider mais novo e o teste roda com outra versão.
 
 ## Como validar
 

@@ -32,3 +32,27 @@ variable "budget_alert_emails" {
   type        = list(string)
   description = "Quem recebe os alertas de custo. Vem de TF_VAR_budget_alert_emails, fora do repositório"
 }
+
+variable "backend_port" {
+  type        = number
+  description = "Porta do container do backend (PORT do NestJS)"
+  default     = 3333
+}
+
+variable "frontend_port" {
+  type        = number
+  description = "Porta do container do frontend (Next.js)"
+  default     = 3000
+}
+
+variable "frontend_listener_port" {
+  type        = number
+  description = "Porta HTTP pública do frontend no ALB"
+  default     = 80
+}
+
+variable "backend_listener_port" {
+  type        = number
+  description = "Porta HTTP pública do backend no ALB, enquanto não há domínio (sai na MS-30)"
+  default     = 8080
+}
