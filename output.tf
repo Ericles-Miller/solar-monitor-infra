@@ -107,3 +107,17 @@ output "database" {
   sensitive   = false
   description = "Conexão do backend com o banco (DB_HOST, DB_PORT, DB_NAME, DB_USERNAME e o parâmetro do DB_PASSWORD)"
 }
+
+output "mail" {
+  value = {
+    host                = module.email.smtp_host
+    port                = module.email.smtp_port
+    secure              = false
+    from                = module.email.mail_from
+    parameter_names     = module.email.parameter_names
+    smtp_user_name      = module.email.smtp_user_name
+    verified_identities = module.email.verified_identities
+  }
+  sensitive   = false
+  description = "E-mail do backend: MAIL_HOST, MAIL_PORT, MAIL_SECURE, MAIL_FROM e os parâmetros de MAIL_USER e MAIL_PASSWORD"
+}

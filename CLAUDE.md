@@ -8,7 +8,7 @@ Infraestrutura do projeto "Monitoramento de Usinas Solares" na AWS, com Terrafor
 
 - **Nunca execute `git commit`, `push`, `merge` nem `pull`** (nem comandos que escrevam no git). Entregue uma **mensagem de commit sugerida** no fim de cada task: `tipo(escopo): resumo (MS-XX)`.
 - **Nunca rode `terraform apply`, `destroy`, `import` nem `state rm`/`mv`** sem o Ericles pedir explicitamente naquela hora: mexem em recursos reais e custam dinheiro. `fmt`, `validate`, `init`, `plan` e `test` podem.
-- **Nenhum segredo** no código, em `*.tfvars` ou em output. Segredo vai no Parameter Store (o Terraform cria o parâmetro com valor provisório e `ignore_changes`; o valor real é colocado à mão) ou é gerado pelo Terraform com atributos write-only, sem passar pelo estado (senha do RDS, MS-89; o RDS não troca a senha sozinho, decisão do Ericles).
+- **Nenhum segredo** no código, em `*.tfvars` ou em output. Segredo vai no Parameter Store (o Terraform cria o parâmetro com valor provisório **write-only**, `value_wo`; o valor real é colocado à mão ou por script. Nunca `value` + `ignore_changes`: o provider leria o SecureString de volta para o estado) ou é gerado pelo Terraform com atributos write-only, sem passar pelo estado (senha do RDS, MS-89; o RDS não troca a senha sozinho, decisão do Ericles).
 - **Uma task do Jira por vez** (projeto MS, épico MS-6). **Decisão fora dos docs = pare e pergunte.**
 - O backend roda com **uma única tarefa** (o coletor fica dentro do processo). Não aumente `desired_count` do backend.
 

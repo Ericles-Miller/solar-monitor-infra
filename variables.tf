@@ -56,3 +56,14 @@ variable "backend_listener_port" {
   description = "Porta HTTP pública do backend no ALB, enquanto não há domínio (sai na MS-30)"
   default     = 8080
 }
+
+variable "mail_sender_email" {
+  type        = string
+  description = "Remetente dos e-mails do backend (MAIL_FROM). Vem de TF_VAR_mail_sender_email, fora do repositório"
+}
+
+variable "mail_test_recipients" {
+  type        = list(string)
+  description = "Destinatários de teste enquanto o SES está no sandbox. Vem de TF_VAR_mail_test_recipients, fora do repositório"
+  default     = []
+}
