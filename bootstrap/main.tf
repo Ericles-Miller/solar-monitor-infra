@@ -1,19 +1,5 @@
 # Cria o bucket S3 que guarda o estado do Terraform de todos os ambientes.
-# Roda uma única vez, com estado local (este diretório não tem backend remoto: o bucket ainda não existe).
-
-provider "aws" {
-  region = var.region
-
-  default_tags {
-    tags = {
-      Project    = "solar-monitor"
-      ManagedBy  = "terraform"
-      Repository = "solar-monitor-infra"
-    }
-  }
-}
-
-data "aws_caller_identity" "current" {}
+# Roda uma única vez, com estado local (ver providers.tf).
 
 locals {
   # O nome de bucket é global na AWS: o id da conta evita colisão.
@@ -80,30 +66,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "state" {
   }
 
   depends_on = [aws_s3_bucket_versioning.state]
-}
-
-# O estado tem endereços e ids de recursos: só aceitar acesso por HTTPS.
-data "aws_iam_policy_document" "state" {
-  statement {
-    sid     = "SomenteHTTPS"
-    effect  = "Deny"
-    actions = ["s3:*"]
-    resources = [
-      aws_s3_bucket.state.arn,
-      "${aws_s3_bucket.state.arn}/*",
-    ]
-
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-
-    condition {
-      test     = "Bool"
-      variable = "aws:SecureTransport"
-      values   = ["false"]
-    }
-  }
 }
 
 resource "aws_s3_bucket_policy" "state" {

@@ -6,11 +6,17 @@ Infraestrutura do **Solar Monitor** (monitoramento de usinas solares) na AWS, co
 
 ## Estrutura
 
-| Pasta | O que é |
+Segue o padrão do repositório [`terraform_infra`](https://github.com/Ericles-Miller/terraform_infra): o Terraform do ambiente fica na **raiz** e cada bloco de infraestrutura é um módulo.
+
+| Arquivo / pasta | O que é |
 |---|---|
-| `bootstrap/` | Cria o bucket S3 que guarda o estado do Terraform. Roda **uma vez por conta**, com estado local |
-| `envs/dev/` | O ambiente dev. Usa os módulos e guarda o estado no bucket do bootstrap |
-| `modules/` | Um módulo por bloco de infraestrutura |
+| `providers.tf` | Bloco `terraform` (versão do provider fixada, backend S3) e o `provider "aws"` com as `default_tags` |
+| `variables.tf` | Variáveis do ambiente, com `type`, `description` e `default` |
+| `main.tf` | Chamada dos módulos |
+| `datasource.tf` | Data sources |
+| `output.tf` | Saídas do ambiente |
+| `modules/<nome>/` | Um módulo por bloco: `main.tf`, `variables.tf`, `outputs.tf`, `datasource.tf` (só se tiver data source) e `tests/` |
+| `bootstrap/` | Cria o bucket S3 que guarda o estado. Roda **uma vez por conta**, com estado local |
 
 Módulos de hoje:
 
@@ -20,18 +26,20 @@ Módulos de hoje:
 
 Os próximos entram com as tasks do épico MS-6: rede, ALB e cluster ECS (MS-88), banco RDS (MS-89), bucket dos avatares (MS-90), SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
 
+### Convenções
+
+- **Variáveis de módulo levam o nome do módulo como prefixo** (`budget_name`, `budget_limit_usd`, `budget_tags`). Todo módulo aceita `<prefixo>_tags` (`map(string)`, padrão `{}`) para tags além das `default_tags`.
+- **Nomes de recurso levam o ambiente**: `solar-monitor-${var.environment}-<nome>`.
+- Outputs com `value`, `sensitive` e `description`.
+- **Valores fixos vão no `default` do `variables.tf`.** Arquivos `*.tfvars` ficam fora do git.
+- O `.terraform.lock.hcl` é versionado.
+
 ## Pré-requisitos
 
 - **Terraform >= 1.10** (a trava do estado usa o lockfile nativo do S3).
-- **AWS CLI v2** com o perfil **`ericles-dev`** configurado e com permissão para criar os recursos.
-- Em todo terminal que for rodar Terraform:
+- **AWS CLI v2** com o perfil **`ericles-dev`** configurado e com permissão para criar os recursos. O perfil vem da variável `aws_profile` (padrão `ericles-dev`) e, no backend, fica fixo no `providers.tf`: não precisa de `export AWS_PROFILE`. Nenhuma credencial fica no código.
 
-  ```sh
-  export AWS_PROFILE=ericles-dev
-  aws sts get-caller-identity   # confere a conta antes de qualquer plan
-  ```
-
-Nenhuma credencial fica no código: o Terraform usa o perfil da variável `AWS_PROFILE`.
+Para conferir a conta antes de qualquer plan: `aws sts get-caller-identity --profile ericles-dev`.
 
 ## Primeira vez numa conta
 
@@ -44,46 +52,53 @@ terraform -chdir=bootstrap apply
 
 Cria `solar-monitor-tfstate-<id-da-conta>`: versionado, criptografado, sem acesso público e só por HTTPS. O estado do bootstrap fica local (`bootstrap/terraform.tfstate`, fora do git). Se ele se perder, o bucket continua lá; para administrá-lo de novo, use `terraform import`.
 
-### 2. Apontar o dev para o bucket
+Numa conta nova, troque o `bucket` do backend no `providers.tf` pelo output `state_bucket` do bootstrap.
+
+### 2. E-mail dos alertas de custo
+
+Quem recebe os alertas **não fica no repositório**: vem da variável de ambiente `TF_VAR_budget_alert_emails`, uma lista em formato HCL. Coloque no seu `~/.zshrc` (ou equivalente):
 
 ```sh
-echo "bucket = \"$(terraform -chdir=bootstrap output -raw state_bucket)\"" > envs/dev/backend.hcl
+export TF_VAR_budget_alert_emails='["voce@exemplo.com"]'
 ```
 
-Versione o `envs/dev/backend.hcl`: ele só tem o nome do bucket, que não é segredo.
+- Sem a variável, o `plan` pergunta o valor (ou para com erro, com `-input=false`). Lista vazia ou e-mail inválido param com "Informe ao menos um e-mail válido".
+- Para trocar quem recebe, mude a variável e rode `plan` + `apply`: a assinatura só muda na AWS depois do `apply`. Quem rodar o `apply` com outro valor troca os destinatários.
+- O e-mail fica gravado no estado (no S3), não no git.
 
-### 3. Preencher os valores do dev
+### 3. Liberar o custo na conta de gerenciamento (manual, uma vez)
 
-Em `envs/dev/terraform.tfvars`, coloque em `budget_alert_emails` quem recebe os alertas de custo. Vazio, o `plan` para com "Informe ao menos um e-mail válido".
+A conta do dev (`779257801295`) é **membro de uma AWS Organization**. Orçamentos, Cost Explorer e tags de custo são controlados pela **conta de gerenciamento** (a pagadora, `471112556317`). Sem a liberação abaixo, o `apply` do orçamento falha com `AccessDeniedException: Account ... is a linked account`.
+
+Logado na **conta de gerenciamento** (não na do dev):
+
+1. **Billing and Cost Management** → **Cost Explorer**: abra uma vez para ativá-lo.
+2. **Billing and Cost Management** → **Cost Management preferences** → **Linked account access**: dê às contas-membro acesso ao Cost Explorer e aos orçamentos.
+3. **Billing and Cost Management** → **Cost allocation tags** → **User-defined cost allocation tags**: marque **`Project`** e clique em **Activate**.
+
+O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, para não misturar com outros projetos. A tag só aparece na lista do passo 3 depois que a AWS processa a cobrança de algum recurso com ela (até 24 h), e a ativação pode levar mais 24 h para valer. **Até lá, o orçamento mostra custo zero e não alerta.**
+
+Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --account-id <id-da-conta-dev> --profile ericles-dev` não pode responder `AccessDeniedException`.
 
 ### 4. Subir o dev
 
 ```sh
-terraform -chdir=envs/dev init -backend-config=backend.hcl
-terraform -chdir=envs/dev plan -out=dev.tfplan
-terraform -chdir=envs/dev apply dev.tfplan
+terraform init
+terraform plan -out=dev.tfplan
+terraform apply dev.tfplan
 ```
 
 Leia o `plan` antes de aplicar. O `apply` cria recursos reais e cobrados.
 
-### 5. Ativar a tag de custo (manual, uma vez)
-
-O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, para não misturar com outros projetos da conta. A AWS só considera a tag depois de ativada:
-
-1. Console da AWS → **Billing and Cost Management** → **Cost allocation tags**.
-2. Em **User-defined cost allocation tags**, marque **`Project`** e clique em **Activate**.
-
-A tag só aparece na lista depois que existe algum recurso com ela, e a ativação pode levar até 24 h para valer. **Até lá, o orçamento mostra custo zero e não alerta.** Os e-mails cadastrados também precisam aceitar a mensagem de confirmação da AWS, se ela vier.
-
 ## Dia a dia
 
 ```sh
-terraform fmt -recursive                                   # formatar
-terraform -chdir=envs/dev validate                         # validar
-terraform -chdir=envs/dev plan                             # ver o que vai mudar
+terraform fmt -recursive   # formatar
+terraform validate         # validar
+terraform plan             # ver o que vai mudar
 ```
 
-Sem acesso à AWS ainda dá para validar: `terraform -chdir=envs/dev init -backend=false` e depois `validate`.
+Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depois `validate`.
 
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
@@ -94,8 +109,8 @@ terraform -chdir=modules/budget test
 
 ## Regras
 
-- **Nenhum segredo** neste repositório, em `terraform.tfvars` ou em output. Segredos vão no Parameter Store (MS-28).
+- **Nenhum segredo** neste repositório ou em output. Segredos vão no Parameter Store (MS-28).
 - `terraform apply` e `destroy` só com o plano lido e conferido.
+- **Só o ambiente dev existe:** a variável `environment` só aceita `dev`, porque o backend aponta para o estado do dev. O prod vai ter estado próprio.
 - O backend roda com **uma única tarefa**: o coletor fica dentro do processo e duas instâncias dobrariam as chamadas à Sungrow.
 - O dev guarda dados **reais** da UFV JAC 03. Cuidado com `destroy`.
-# solar-monitor-infra
