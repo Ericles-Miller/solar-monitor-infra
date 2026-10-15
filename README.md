@@ -27,8 +27,9 @@ Módulos de hoje:
 | `alb` | MS-88 | ALB com os target groups do backend e do frontend e os listeners HTTP (`:80` → frontend, `:8080` → backend) |
 | `ecs_cluster` | MS-88 | Cluster ECS (Fargate) e os grupos de log de cada serviço |
 | `avatars` | MS-90 | Bucket S3 dos avatares: leitura pública só de `avatars/*`, sem ACL, criptografado, sem versões e só por HTTPS |
+| `database` | MS-89 | RDS PostgreSQL 15 nas sub-redes privadas; senha gerada pelo Terraform, fora do estado, no Parameter Store, sem troca automática |
 
-Os próximos entram com as tasks do épico MS-6: banco RDS (MS-89), SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
+Os próximos entram com as tasks do épico MS-6: SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
 
 ### Convenções
 
@@ -40,7 +41,7 @@ Os próximos entram com as tasks do épico MS-6: banco RDS (MS-89), SES (MS-91),
 
 ## Pré-requisitos
 
-- **Terraform >= 1.10** (a trava do estado usa o lockfile nativo do S3).
+- **Terraform >= 1.11** (a trava do estado usa o lockfile nativo do S3, desde o 1.10; a senha do banco usa atributos write-only, desde o 1.11).
 - **AWS CLI v2** com o perfil **`ericles-dev`** configurado e com permissão para criar os recursos. O perfil vem da variável `aws_profile` (padrão `ericles-dev`) e, no backend, fica fixo no `providers.tf`: não precisa de `export AWS_PROFILE`. Nenhuma credencial fica no código.
 
 Para conferir a conta antes de qualquer plan: `aws sts get-caller-identity --profile ericles-dev`.
@@ -107,7 +108,7 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb ecs_cluster avatars; do
+for m in budget network alb ecs_cluster avatars database; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```
