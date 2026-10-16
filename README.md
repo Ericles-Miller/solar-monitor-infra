@@ -32,8 +32,9 @@ Módulos de hoje:
 | `ecr` | MS-28 | Repositório de imagens com tag imutável, scan ao enviar e só as 10 últimas imagens |
 | `ecs_service` | MS-28 | Serviço Fargate genérico atrás do ALB: papéis IAM, task definition com segredos do Parameter Store, health check, ECS Exec e rollback automático |
 | `backend_secrets` | MS-28 | Segredos do backend: JWT gerados pelo Terraform e as credenciais da Sungrow (preenchidas por `scripts/backend-secrets.sh`) |
+| `github_deploy` | MS-94 | Papel que o GitHub Actions assume (OIDC) para publicar um serviço no ECS; só a `develop` do repositório |
 
-Os próximos entram com as tasks do épico MS-6: frontend no ECS (MS-29, reaproveitando `ecr` e `ecs_service`), scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
+Os próximos entram com as tasks do épico MS-6: frontend no ECS (MS-29, reaproveitando `ecr`, `ecs_service` e `github_deploy`) e domínio com HTTPS (MS-30).
 
 ### Convenções
 
@@ -106,15 +107,53 @@ O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, par
 
 Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --account-id <id-da-conta-dev> --profile ericles-dev` não pode responder `AccessDeniedException`.
 
-### 5. Subir o dev
+### 5. Subir o dev (primeira vez)
+
+Todo `plan`/`apply` recebe a tag da imagem do backend (`-var backend_image_tag=<commit>`, nunca `latest`). Leia o `plan` antes de aplicar: o `apply` cria recursos reais e cobrados (~US$ 91 por mês com o backend no ar).
 
 ```sh
-terraform init
-terraform plan -out=dev.tfplan
+# 1. Repositório da imagem e parâmetros dos segredos (centavos)
+TAG=$(git -C ../solar-monitor rev-parse --short=7 develop)
+terraform apply -var backend_image_tag=$TAG -target=module.backend_ecr -target=module.backend_secrets
+
+# 2. Credenciais da Sungrow, copiadas do .env do backend (os JWT o Terraform gera sozinho)
+scripts/backend-secrets.sh ../solar-monitor/.env
+
+# 3. Primeira imagem do backend (ARM64), do develop
+REPO=$(terraform output -json backend | python3 -c 'import json,sys; print(json.load(sys.stdin)["ecr_repository_url"])')
+aws ecr get-login-password --profile ericles-dev --region sa-east-1 | docker login --username AWS --password-stdin "${REPO%%/*}"
+git -C ../solar-monitor checkout develop
+docker build --platform linux/arm64 -t "$REPO:$TAG" ../solar-monitor && docker push "$REPO:$TAG"
+
+# 4. O resto: rede, ALB, banco (~10 min) e o serviço do backend
+terraform plan -var backend_image_tag=$TAG -out=dev.tfplan
 terraform apply dev.tfplan
 ```
 
-Leia o `plan` antes de aplicar. O `apply` cria recursos reais e cobrados.
+Depois, pelo ECS Exec (precisa do `session-manager-plugin`: `brew install --cask session-manager-plugin`):
+
+```sh
+TASK=$(aws ecs list-tasks --cluster solar-monitor-dev --service-name solar-monitor-dev-api --query 'taskArns[0]' --output text --profile ericles-dev --region sa-east-1)
+exec_api() { aws ecs execute-command --cluster solar-monitor-dev --task "$TASK" --container api --interactive --command "$1" --profile ericles-dev --region sa-east-1; }
+
+exec_api "node dist/scripts/import-plant.js 1569493"                    # mostra o código de vínculo
+for k in 1569493_1_1_1 1569493_1_2_1 1569493_1_3_1 1569493_1_4_1 1569493_1_5_1; do
+  exec_api "node dist/scripts/set-string-inputs.js $k 1-23"             # entradas em uso (MS-96)
+done
+```
+
+### 6. Ligar o CI/CD (GitHub Actions)
+
+O workflow `.github/workflows/ci.yml` do `solar-monitor` e do `solar-monitor-web`: push na **`develop` publica no dev**; push na **`main` só valida** (testes e semantic release). Em cada repositório, em **Settings → Secrets and variables → Actions**:
+
+| Tipo | Nome | Valor |
+|---|---|---|
+| Secret | `ROLE_ASSUME` | backend: `terraform output -json backend` → `github_role_arn` (o do front vem com a MS-29) |
+| Secret | `AWS_REGION` | `sa-east-1` |
+| Variável | `DEPLOY_ENABLED` | `true` (sem ela, o push só testa e não publica) |
+| Variável (só front) | `NEXT_PUBLIC_API_URL` | `terraform output -raw backend_url` |
+
+O papel do deploy só aceita a `develop` daquele repositório e só pode enviar a imagem ao ECR do serviço, registrar a task definition e atualizar o serviço. A imagem ARM64 é gerada com emulação: o primeiro build é lento, os seguintes usam o cache.
 
 ## Dia a dia
 
@@ -129,12 +168,22 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb ecs_cluster avatars database email ecr ecs_service backend_secrets; do
+for m in budget network alb ecs_cluster avatars database email ecr ecs_service backend_secrets github_deploy; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```
 
 Cada módulo tem o próprio `.terraform.lock.hcl`, **cópia do lock da raiz**, para os testes rodarem com a mesma versão do provider do ambiente. Ao trocar a versão do provider na raiz, copie o lock novo para os módulos.
+
+## Operar o dev
+
+- **Publicar versão nova:** merge ou push na `develop` do repositório. O workflow testa, gera a imagem com a tag do commit, publica e espera o serviço ficar saudável. Se a versão nova não subir, o ECS volta sozinho para a anterior e o workflow falha.
+- **Rollback:** em **Actions**, abra a execução do commit bom e **Re-run all jobs**. A imagem daquele commit já está no ECR, então o workflow pula o build e só publica. Sem o GitHub: `aws ecs update-service --cluster solar-monitor-dev --service solar-monitor-dev-api --task-definition solar-monitor-dev-api:<revisão anterior>`.
+- **Mudar uma variável do backend (ou acrescentar um segredo):** mude no Terraform e aplique; a revisão nova da task definition entra no próximo deploy do CI. Para valer na hora, rode de novo o último workflow da `develop` (**Re-run all jobs**): ele parte da revisão mais nova. (O `--force-new-deployment` não serve aqui: ele reinicia com a revisão que já está no ar.)
+- **Trocar um segredo:** JWT e senha do banco: aumente `backend_secrets_jwt_version` ou `database_password_version`, aplique e reinicie o backend. Sungrow: `scripts/backend-secrets.sh`. SMTP: `scripts/ses-smtp-credentials.sh --replace`. Depois, `--force-new-deployment`.
+- **Pausar o dev para economizar:** `aws ecs update-service ... --desired-count 0` no backend (e no front) e `aws rds stop-db-instance --db-instance-identifier solar-monitor-dev-db`. Parado, o RDS só cobra o disco; a AWS religa sozinha depois de 7 dias. Para voltar: `aws rds start-db-instance ...` e `--desired-count 1`. O próximo `apply` também volta o backend para 1 tarefa.
+- **Logs:** `aws logs tail /ecs/solar-monitor-dev/api --follow --profile ericles-dev --region sa-east-1`.
+- **Dados reais da UFV JAC 03:** não desvincular a usina nem excluir a conta que a tem, e não rodar `destroy` (o banco tem proteção contra exclusão e snapshot final). Com o backend do dev no ar, o backend local não deve coletar junto (`COLLECTOR_INTERVAL_MINUTES` bem alto no `.env`), para não dobrar as chamadas à Sungrow.
 
 ## Regras
 

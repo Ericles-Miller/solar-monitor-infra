@@ -146,3 +146,13 @@ module "backend" {
     ]
   })
 }
+
+# Deploy do backend pelo GitHub Actions (MS-94): só a develop do solar-monitor publica no dev.
+module "backend_github_deploy" {
+  source                           = "./modules/github_deploy"
+  github_deploy_name               = "${local.name_prefix}-github-api"
+  github_deploy_repository         = "${var.github_owner}/solar-monitor"
+  github_deploy_ecr_repository_arn = module.backend_ecr.repository_arn
+  github_deploy_ecs_service_arn    = module.backend.service_arn
+  github_deploy_pass_role_arns     = [module.backend.execution_role_arn, module.backend.task_role_arn]
+}
