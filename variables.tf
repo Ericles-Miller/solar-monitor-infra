@@ -56,3 +56,60 @@ variable "backend_listener_port" {
   description = "Porta HTTP pública do backend no ALB, enquanto não há domínio (sai na MS-30)"
   default     = 8080
 }
+
+variable "mail_sender_email" {
+  type        = string
+  description = "Remetente dos e-mails do backend (MAIL_FROM). Vem de TF_VAR_mail_sender_email, fora do repositório"
+}
+
+variable "mail_test_recipients" {
+  type        = list(string)
+  description = "Destinatários de teste enquanto o SES está no sandbox. Vem de TF_VAR_mail_test_recipients, fora do repositório"
+  default     = []
+}
+
+variable "backend_image_tag" {
+  type        = string
+  description = "Tag da imagem do backend no ECR (o commit curto do solar-monitor, MS-94). Vem de -var ou TF_VAR_backend_image_tag"
+
+  validation {
+    condition     = length(var.backend_image_tag) > 0 && var.backend_image_tag != "latest"
+    error_message = "Informe a tag de uma imagem enviada ao ECR (o commit curto), nunca latest."
+  }
+}
+
+variable "backend_cpu" {
+  type        = number
+  description = "CPU da tarefa do backend (512 = 0,5 vCPU)"
+  default     = 512
+}
+
+variable "backend_memory" {
+  type        = number
+  description = "Memória da tarefa do backend, em MB"
+  default     = 1024
+}
+
+variable "app_name" {
+  type        = string
+  description = "Nome da plataforma nos e-mails (APP_NAME do backend)"
+  default     = "Monitoramento de Usinas Solares"
+}
+
+variable "sungrow_gateway_url" {
+  type        = string
+  description = "Gateway da API da Sungrow (SUNGROW_GATEWAY_URL do backend)"
+  default     = "https://gateway.isolarcloud.com.hk"
+}
+
+variable "collector_interval_minutes" {
+  type        = number
+  description = "De quanto em quanto tempo o coletor busca as leituras na Sungrow"
+  default     = 10
+}
+
+variable "collector_alert_after_failures" {
+  type        = number
+  description = "Quantos ciclos seguidos com falha até o coletor avisar no log"
+  default     = 3
+}

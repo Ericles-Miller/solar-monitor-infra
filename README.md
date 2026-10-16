@@ -27,8 +27,13 @@ Módulos de hoje:
 | `alb` | MS-88 | ALB com os target groups do backend e do frontend e os listeners HTTP (`:80` → frontend, `:8080` → backend) |
 | `ecs_cluster` | MS-88 | Cluster ECS (Fargate) e os grupos de log de cada serviço |
 | `avatars` | MS-90 | Bucket S3 dos avatares: leitura pública só de `avatars/*`, sem ACL, criptografado, sem versões e só por HTTPS |
+| `database` | MS-89 | RDS PostgreSQL 15 nas sub-redes privadas; senha gerada pelo Terraform, fora do estado, no Parameter Store, sem troca automática |
+| `email` | MS-91 | SES: remetente verificado, usuário SMTP que só envia com ele e os parâmetros `MAIL_USER` e `MAIL_PASSWORD` (preenchidos por `scripts/ses-smtp-credentials.sh`) |
+| `ecr` | MS-28 | Repositório de imagens com tag imutável, scan ao enviar e só as 10 últimas imagens |
+| `ecs_service` | MS-28 | Serviço Fargate genérico atrás do ALB: papéis IAM, task definition com segredos do Parameter Store, health check, ECS Exec e rollback automático |
+| `backend_secrets` | MS-28 | Segredos do backend: JWT gerados pelo Terraform e as credenciais da Sungrow (preenchidas por `scripts/backend-secrets.sh`) |
 
-Os próximos entram com as tasks do épico MS-6: banco RDS (MS-89), SES (MS-91), backend (MS-28) e frontend (MS-29) no ECS, scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
+Os próximos entram com as tasks do épico MS-6: frontend no ECS (MS-29, reaproveitando `ecr` e `ecs_service`), scripts de deploy (MS-94) e domínio com HTTPS (MS-30).
 
 ### Convenções
 
@@ -40,7 +45,7 @@ Os próximos entram com as tasks do épico MS-6: banco RDS (MS-89), SES (MS-91),
 
 ## Pré-requisitos
 
-- **Terraform >= 1.10** (a trava do estado usa o lockfile nativo do S3).
+- **Terraform >= 1.11** (a trava do estado usa o lockfile nativo do S3, desde o 1.10; a senha do banco usa atributos write-only, desde o 1.11).
 - **AWS CLI v2** com o perfil **`ericles-dev`** configurado e com permissão para criar os recursos. O perfil vem da variável `aws_profile` (padrão `ericles-dev`) e, no backend, fica fixo no `providers.tf`: não precisa de `export AWS_PROFILE`. Nenhuma credencial fica no código.
 
 Para conferir a conta antes de qualquer plan: `aws sts get-caller-identity --profile ericles-dev`.
@@ -70,7 +75,24 @@ export TF_VAR_budget_alert_emails='["voce@exemplo.com"]'
 - Para trocar quem recebe, mude a variável e rode `plan` + `apply`: a assinatura só muda na AWS depois do `apply`. Quem rodar o `apply` com outro valor troca os destinatários.
 - O e-mail fica gravado no estado (no S3), não no git.
 
-### 3. Liberar o custo na conta de gerenciamento (manual, uma vez)
+### 3. Remetente dos e-mails
+
+Como o e-mail do alerta, o remetente do backend e os destinatários de teste do sandbox do SES vêm de variáveis de ambiente:
+
+```sh
+export TF_VAR_mail_sender_email='voce@exemplo.com'
+export TF_VAR_mail_test_recipients='["outro@exemplo.com"]'   # opcional
+```
+
+Depois do primeiro `apply`, a AWS manda um link de confirmação para cada endereço: clique nele. Em seguida, rode uma vez:
+
+```sh
+scripts/ses-smtp-credentials.sh
+```
+
+Ele cria a chave do usuário SMTP e grava `MAIL_USER` e `MAIL_PASSWORD` no Parameter Store, sem mostrar nada. Para trocar a chave: `scripts/ses-smtp-credentials.sh --replace` e reinicie o backend.
+
+### 4. Liberar o custo na conta de gerenciamento (manual, uma vez)
 
 A conta do dev (`779257801295`) é **membro de uma AWS Organization**. Orçamentos, Cost Explorer e tags de custo são controlados pela **conta de gerenciamento** (a pagadora, `471112556317`). Sem a liberação abaixo, o `apply` do orçamento falha com `AccessDeniedException: Account ... is a linked account`.
 
@@ -84,7 +106,7 @@ O alerta de custo conta só os recursos com a tag `Project = solar-monitor`, par
 
 Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --account-id <id-da-conta-dev> --profile ericles-dev` não pode responder `AccessDeniedException`.
 
-### 4. Subir o dev
+### 5. Subir o dev
 
 ```sh
 terraform init
@@ -107,7 +129,7 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb ecs_cluster avatars; do
+for m in budget network alb ecs_cluster avatars database email ecr ecs_service backend_secrets; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```
