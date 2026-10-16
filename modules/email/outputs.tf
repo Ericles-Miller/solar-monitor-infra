@@ -29,9 +29,9 @@ output "parameter_names" {
 }
 
 output "parameter_arns" {
-  value       = [for parameter in aws_ssm_parameter.smtp : parameter.arn]
+  value       = { for name, parameter in aws_ssm_parameter.smtp : name => parameter.arn }
   sensitive   = false
-  description = "ARNs dos parâmetros do SMTP, para o papel de execução da tarefa (MS-28) poder ler"
+  description = "MAIL_USER e MAIL_PASSWORD => ARN do parâmetro (bloco secrets da task definition, MS-28)"
 }
 
 output "verified_identities" {
