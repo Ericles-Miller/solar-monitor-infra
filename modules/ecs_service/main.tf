@@ -182,4 +182,11 @@ resource "aws_ecs_service" "main" {
   }
 
   tags = var.ecs_service_tags
+
+  # Quem publica versão nova é o CI (MS-94): ele registra uma revisão da task definition com a imagem nova e atualiza o
+  # serviço. O Terraform não pode voltar o serviço para a revisão dele. Uma mudança feita aqui na task definition
+  # (variável, segredo) vira uma revisão nova que entra no próximo deploy do CI, que parte sempre da revisão mais nova.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
