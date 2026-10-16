@@ -128,7 +128,8 @@ output "backend" {
     cluster            = module.ecs_cluster.cluster_name
     service            = module.backend.service_name
     container          = module.backend.container_name
+    github_role_arn    = module.backend_github_deploy.role_arn
   }
   sensitive   = false
-  description = "Backend no ECS: repositório da imagem, cluster, serviço e contêiner (para o deploy e o ECS Exec)"
+  description = "Backend no ECS: repositório da imagem, cluster, serviço, contêiner (ECS Exec) e o papel do deploy (secret ROLE_ASSUME do solar-monitor no GitHub)"
 }

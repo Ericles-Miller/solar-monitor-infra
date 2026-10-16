@@ -113,3 +113,9 @@ variable "collector_alert_after_failures" {
   description = "Quantos ciclos seguidos com falha até o coletor avisar no log"
   default     = 3
 }
+
+variable "github_owner" {
+  type        = string
+  description = "Dono dos repositórios no GitHub (o papel do deploy só aceita os repositórios dele)"
+  default     = "Ericles-Miller"
+}
