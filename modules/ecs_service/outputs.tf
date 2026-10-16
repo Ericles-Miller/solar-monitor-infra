@@ -4,6 +4,12 @@ output "service_name" {
   description = "Nome do serviço ECS"
 }
 
+output "service_arn" {
+  value       = aws_ecs_service.main.id
+  sensitive   = false
+  description = "ARN do serviço ECS (o papel do deploy pelo GitHub Actions só atualiza ele)"
+}
+
 output "container_name" {
   value       = var.ecs_service_container_name
   sensitive   = false
