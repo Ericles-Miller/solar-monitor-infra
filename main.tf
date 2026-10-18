@@ -156,3 +156,38 @@ module "backend_github_deploy" {
   github_deploy_ecs_service_arn    = module.backend.service_arn
   github_deploy_pass_role_arns     = [module.backend.execution_role_arn, module.backend.task_role_arn]
 }
+
+# Front no ECS (MS-29): imagem no ECR e uma tarefa atrás do ALB (:80 até a MS-30). Sem segredos: o endereço da API
+# entra no build da imagem (NEXT_PUBLIC_API_URL = saída backend_url), e a porta e o HOSTNAME vêm do Dockerfile.
+module "frontend_ecr" {
+  source              = "./modules/ecr"
+  ecr_repository_name = "${local.project}-web"
+}
+
+module "frontend" {
+  source                                        = "./modules/ecs_service"
+  ecs_service_name                              = "${local.name_prefix}-web"
+  ecs_service_cluster_arn                       = module.ecs_cluster.cluster_arn
+  ecs_service_image                             = "${module.frontend_ecr.repository_url}:${var.frontend_image_tag}"
+  ecs_service_container_name                    = "web"
+  ecs_service_container_port                    = var.frontend_port
+  ecs_service_cpu                               = var.frontend_cpu
+  ecs_service_memory                            = var.frontend_memory
+  ecs_service_log_group_name                    = module.ecs_cluster.log_group_names["web"]
+  ecs_service_region                            = var.aws_region
+  ecs_service_subnet_ids                        = module.network.public_subnet_ids
+  ecs_service_security_group_ids                = [module.network.frontend_security_group_id]
+  ecs_service_target_group_arn                  = module.alb.frontend_target_group_arn
+  ecs_service_health_check_path                 = "/login"
+  ecs_service_health_check_grace_period_seconds = 60
+}
+
+# Deploy do front pelo GitHub Actions (MS-94): só a develop do solar-monitor-web publica no dev.
+module "frontend_github_deploy" {
+  source                           = "./modules/github_deploy"
+  github_deploy_name               = "${local.name_prefix}-github-web"
+  github_deploy_repository         = "${var.github_owner}/solar-monitor-web"
+  github_deploy_ecr_repository_arn = module.frontend_ecr.repository_arn
+  github_deploy_ecs_service_arn    = module.frontend.service_arn
+  github_deploy_pass_role_arns     = [module.frontend.execution_role_arn, module.frontend.task_role_arn]
+}

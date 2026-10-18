@@ -133,3 +133,15 @@ output "backend" {
   sensitive   = false
   description = "Backend no ECS: repositório da imagem, cluster, serviço, contêiner (ECS Exec) e o papel do deploy (secret ROLE_ASSUME do solar-monitor no GitHub)"
 }
+
+output "frontend" {
+  value = {
+    ecr_repository_url = module.frontend_ecr.repository_url
+    cluster            = module.ecs_cluster.cluster_name
+    service            = module.frontend.service_name
+    container          = module.frontend.container_name
+    github_role_arn    = module.frontend_github_deploy.role_arn
+  }
+  sensitive   = false
+  description = "Front no ECS: repositório da imagem, cluster, serviço, contêiner e o papel do deploy (secret ROLE_ASSUME do solar-monitor-web no GitHub)"
+}
