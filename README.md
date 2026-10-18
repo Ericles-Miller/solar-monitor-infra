@@ -34,7 +34,7 @@ Módulos de hoje:
 | `backend_secrets` | MS-28 | Segredos do backend: JWT gerados pelo Terraform e as credenciais da Sungrow (preenchidas por `scripts/backend-secrets.sh`) |
 | `github_deploy` | MS-94 | Papel que o GitHub Actions assume (OIDC) para publicar um serviço no ECS; só a `develop` do repositório |
 
-Os próximos entram com as tasks do épico MS-6: frontend no ECS (MS-29, reaproveitando `ecr`, `ecs_service` e `github_deploy`) e domínio com HTTPS (MS-30).
+Falta só o domínio com HTTPS (MS-30), que depende do domínio do cliente. O front (MS-29) reaproveita os módulos `ecr`, `ecs_service` e `github_deploy` do backend.
 
 ### Convenções
 
@@ -109,24 +109,34 @@ Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --ac
 
 ### 5. Subir o dev (primeira vez)
 
-Todo `plan`/`apply` recebe a tag da imagem do backend (`-var backend_image_tag=<commit>`, nunca `latest`). Leia o `plan` antes de aplicar: o `apply` cria recursos reais e cobrados (~US$ 91 por mês com o backend no ar).
+Todo `plan`/`apply` recebe a tag da imagem do backend e a do front (`-var backend_image_tag=<commit> -var frontend_image_tag=<commit>`, nunca `latest`). Leia o `plan` antes de aplicar: o `apply` cria recursos reais e cobrados (~US$ 107 por mês com o back e o front no ar).
+
+O front precisa do endereço da API **no build** da imagem, e esse endereço é o do ALB. Por isso o ALB sobe antes das imagens:
 
 ```sh
-# 1. Repositório da imagem e parâmetros dos segredos (centavos)
-TAG=$(git -C ../solar-monitor rev-parse --short=7 develop)
-terraform apply -var backend_image_tag=$TAG -target=module.backend_ecr -target=module.backend_secrets
+BACK_TAG=$(git -C ../solar-monitor rev-parse --short=7 develop)
+FRONT_TAG=$(git -C ../solar-monitor-web rev-parse --short=7 develop)
+
+# 1. Repositórios das imagens, parâmetros dos segredos e o ALB (com a rede)
+terraform apply -var backend_image_tag=$BACK_TAG -var frontend_image_tag=$FRONT_TAG \
+  -target=module.backend_ecr -target=module.frontend_ecr -target=module.backend_secrets -target=module.alb
 
 # 2. Credenciais da Sungrow, copiadas do .env do backend (os JWT o Terraform gera sozinho)
 scripts/backend-secrets.sh ../solar-monitor/.env
 
-# 3. Primeira imagem do backend (ARM64), do develop
-REPO=$(terraform output -json backend | python3 -c 'import json,sys; print(json.load(sys.stdin)["ecr_repository_url"])')
-aws ecr get-login-password --profile ericles-dev --region sa-east-1 | docker login --username AWS --password-stdin "${REPO%%/*}"
-git -C ../solar-monitor checkout develop
-docker build --platform linux/arm64 -t "$REPO:$TAG" ../solar-monitor && docker push "$REPO:$TAG"
+# 3. Primeiras imagens (ARM64), do develop de cada repositório
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text --profile ericles-dev)
+REGISTRY="$ACCOUNT.dkr.ecr.sa-east-1.amazonaws.com"
+API_URL="http://$(aws elbv2 describe-load-balancers --names solar-monitor-dev-alb --query 'LoadBalancers[0].DNSName' --output text --profile ericles-dev --region sa-east-1):8080"
+aws ecr get-login-password --profile ericles-dev --region sa-east-1 | docker login --username AWS --password-stdin "$REGISTRY"
+git -C ../solar-monitor checkout develop && git -C ../solar-monitor-web checkout develop
+docker build --platform linux/arm64 -t "$REGISTRY/solar-monitor-api:$BACK_TAG" ../solar-monitor
+docker push "$REGISTRY/solar-monitor-api:$BACK_TAG"
+docker build --platform linux/arm64 --build-arg NEXT_PUBLIC_API_URL="$API_URL" -t "$REGISTRY/solar-monitor-web:$FRONT_TAG" ../solar-monitor-web
+docker push "$REGISTRY/solar-monitor-web:$FRONT_TAG"
 
-# 4. O resto: rede, ALB, banco (~10 min) e o serviço do backend
-terraform plan -var backend_image_tag=$TAG -out=dev.tfplan
+# 4. O resto: banco (~10 min), os dois serviços e os papéis do deploy pelo GitHub
+terraform plan -var backend_image_tag=$BACK_TAG -var frontend_image_tag=$FRONT_TAG -out=dev.tfplan
 terraform apply dev.tfplan
 ```
 
@@ -148,7 +158,7 @@ O workflow `.github/workflows/ci.yml` do `solar-monitor` e do `solar-monitor-web
 
 | Tipo | Nome | Valor |
 |---|---|---|
-| Secret | `ROLE_ASSUME` | backend: `terraform output -json backend` → `github_role_arn` (o do front vem com a MS-29) |
+| Secret | `ROLE_ASSUME` | `github_role_arn` de `terraform output -json backend` (no `solar-monitor`) ou de `terraform output -json frontend` (no `solar-monitor-web`) |
 | Secret | `AWS_REGION` | `sa-east-1` |
 | Variável | `DEPLOY_ENABLED` | `true` (sem ela, o push só testa e não publica) |
 | Variável (só front) | `NEXT_PUBLIC_API_URL` | `terraform output -raw backend_url` |
@@ -160,7 +170,13 @@ O papel do deploy só aceita a `develop` daquele repositório e só pode enviar 
 ```sh
 terraform fmt -recursive   # formatar
 terraform validate         # validar
-terraform plan             # ver o que vai mudar
+terraform plan -var backend_image_tag=<tag no ar> -var frontend_image_tag=<tag no ar>   # ver o que vai mudar
+```
+
+Quem publica as imagens é o CI; as tags no `plan` só importam na primeira subida. Para usar as que estão no ar (e o `plan` não mostrar diferença na task definition):
+
+```sh
+for s in api web; do aws ecs describe-task-definition --task-definition solar-monitor-dev-$s --query 'taskDefinition.containerDefinitions[0].image' --output text --profile ericles-dev --region sa-east-1; done
 ```
 
 Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depois `validate`.
