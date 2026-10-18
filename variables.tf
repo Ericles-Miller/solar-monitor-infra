@@ -119,3 +119,25 @@ variable "github_owner" {
   description = "Dono dos repositórios no GitHub (o papel do deploy só aceita os repositórios dele)"
   default     = "Ericles-Miller"
 }
+
+variable "frontend_image_tag" {
+  type        = string
+  description = "Tag da imagem do front no ECR (o commit curto do solar-monitor-web). Vem de -var ou TF_VAR_frontend_image_tag"
+
+  validation {
+    condition     = length(var.frontend_image_tag) > 0 && var.frontend_image_tag != "latest"
+    error_message = "Informe a tag de uma imagem enviada ao ECR (o commit curto), nunca latest."
+  }
+}
+
+variable "frontend_cpu" {
+  type        = number
+  description = "CPU da tarefa do front (256 = 0,25 vCPU)"
+  default     = 256
+}
+
+variable "frontend_memory" {
+  type        = number
+  description = "Memória da tarefa do front, em MB"
+  default     = 512
+}
