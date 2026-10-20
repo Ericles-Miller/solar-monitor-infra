@@ -117,9 +117,10 @@ O front precisa do endereço da API **no build** da imagem, e esse endereço é 
 BACK_TAG=$(git -C ../solar-monitor rev-parse --short=7 develop)
 FRONT_TAG=$(git -C ../solar-monitor-web rev-parse --short=7 develop)
 
-# 1. Repositórios das imagens, parâmetros dos segredos e o ALB (com a rede)
+# 1. Rede inteira, ALB, repositórios das imagens e parâmetros dos segredos. A rede vai inteira: só com o ALB, o
+#    internet gateway e as rotas ficariam de fora, e a AWS não cria ALB público em VPC sem internet gateway.
 terraform apply -var backend_image_tag=$BACK_TAG -var frontend_image_tag=$FRONT_TAG \
-  -target=module.backend_ecr -target=module.frontend_ecr -target=module.backend_secrets -target=module.alb
+  -target=module.network -target=module.alb -target=module.backend_ecr -target=module.frontend_ecr -target=module.backend_secrets
 
 # 2. Credenciais da Sungrow, copiadas do .env do backend (os JWT o Terraform gera sozinho)
 scripts/backend-secrets.sh ../solar-monitor/.env
