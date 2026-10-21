@@ -17,15 +17,24 @@ output "budget_name" {
 }
 
 output "frontend_url" {
-  value       = "http://${module.alb.alb_dns_name}"
+  value       = module.frontend_cdn.url
   sensitive   = false
-  description = "Endereço do frontend, enquanto não há domínio"
+  description = "Endereço HTTPS do frontend (CloudFront), enquanto não há domínio"
 }
 
 output "backend_url" {
-  value       = "http://${module.alb.alb_dns_name}:${var.backend_listener_port}"
+  value       = module.backend_cdn.url
   sensitive   = false
-  description = "Endereço do backend, enquanto não há domínio (NEXT_PUBLIC_API_URL do frontend)"
+  description = "Endereço HTTPS do backend (CloudFront), enquanto não há domínio (NEXT_PUBLIC_API_URL do frontend)"
+}
+
+output "alb_urls" {
+  value = {
+    frontend = "http://${module.alb.alb_dns_name}"
+    backend  = "http://${module.alb.alb_dns_name}:${var.backend_listener_port}"
+  }
+  sensitive   = false
+  description = "Endereços diretos do ALB, em HTTP (para diagnóstico; o público usa os do CloudFront)"
 }
 
 output "alb_dns_name" {

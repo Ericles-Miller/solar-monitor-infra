@@ -5,21 +5,24 @@ locals {
   project     = "solar-monitor"
   name_prefix = "${local.project}-${var.environment}"
 
-  # Sem domínio, o front sai na porta 80 do ALB (a MS-30 troca por https://dev.<domínio>).
-  frontend_url = "http://${module.alb.alb_dns_name}"
+  # Sem domínio, o front sai em HTTPS pelo CloudFront (a MS-30 troca por https://dev.<domínio>). O endereço direto
+  # do ALB, em HTTP, continua aceito no CORS.
+  frontend_url     = module.frontend_cdn.url
+  alb_frontend_url = "http://${module.alb.alb_dns_name}"
 
   # Variáveis comuns do backend (07-deploy-backend.md §3). NODE_ENV=production vem do Dockerfile. Segredo nunca
   # entra aqui: vai no bloco secrets, pelo Parameter Store.
   backend_environment = {
-    PORT                           = tostring(var.backend_port)
-    TZ                             = "America/Sao_Paulo"
-    TRUST_PROXY_HOPS               = "1"
+    PORT = tostring(var.backend_port)
+    TZ   = "America/Sao_Paulo"
+    # Dois proxies na frente: o CloudFront (põe o IP do cliente no X-Forwarded-For) e o ALB.
+    TRUST_PROXY_HOPS               = "2"
     DB_HOST                        = module.database.address
     DB_PORT                        = tostring(module.database.port)
     DB_NAME                        = module.database.db_name
     DB_USERNAME                    = module.database.username
     DB_SSL                         = "true"
-    CORS_ORIGINS                   = local.frontend_url
+    CORS_ORIGINS                   = join(",", [local.frontend_url, local.alb_frontend_url])
     FRONTEND_URL                   = local.frontend_url
     MAIL_HOST                      = module.email.smtp_host
     MAIL_PORT                      = tostring(module.email.smtp_port)
@@ -66,6 +69,22 @@ module "alb" {
   alb_frontend_port          = var.frontend_port
   alb_frontend_listener_port = var.frontend_listener_port
   alb_backend_listener_port  = var.backend_listener_port
+}
+
+# HTTPS sem domínio (21/10/2026): uma distribuição do CloudFront para o front e outra para a API, as duas com o
+# certificado padrão da AWS. As duas precisam de HTTPS: numa página HTTPS, o navegador bloqueia chamada a API HTTP.
+module "frontend_cdn" {
+  source                 = "./modules/cdn"
+  cdn_name               = "${local.name_prefix}-web"
+  cdn_origin_domain_name = module.alb.alb_dns_name
+  cdn_origin_http_port   = var.frontend_listener_port
+}
+
+module "backend_cdn" {
+  source                 = "./modules/cdn"
+  cdn_name               = "${local.name_prefix}-api"
+  cdn_origin_domain_name = module.alb.alb_dns_name
+  cdn_origin_http_port   = var.backend_listener_port
 }
 
 module "ecs_cluster" {
