@@ -25,6 +25,7 @@ Módulos de hoje:
 | `budget` | MS-87 | Orçamento mensal com alerta de custo por e-mail |
 | `network` | MS-88 | VPC em 2 zonas (sub-redes públicas e privadas, sem NAT), rotas e os security groups do ALB, das tarefas e do banco |
 | `alb` | MS-88 | ALB com os target groups do backend e do frontend e os listeners HTTP (`:80` → frontend, `:8080` → backend) |
+| `cdn` | — | CloudFront na frente de um listener do ALB: HTTPS sem domínio (`https://<id>.cloudfront.net`, certificado da AWS), sem cache e com o `Authorization` chegando ao backend; um para o front e outro para a API |
 | `ecs_cluster` | MS-88 | Cluster ECS (Fargate) e os grupos de log de cada serviço |
 | `avatars` | MS-90 | Bucket S3 dos avatares: leitura pública só de `avatars/*`, sem ACL, criptografado, sem versões e só por HTTPS |
 | `database` | MS-89 | RDS PostgreSQL 15 nas sub-redes privadas; senha gerada pelo Terraform, fora do estado, no Parameter Store, sem troca automática |
@@ -111,15 +112,18 @@ Para conferir a liberação, na conta do dev: `aws budgets describe-budgets --ac
 
 Todo `plan`/`apply` recebe a tag da imagem do backend e a do front (`-var backend_image_tag=<commit> -var frontend_image_tag=<commit>`, nunca `latest`). Leia o `plan` antes de aplicar: o `apply` cria recursos reais e cobrados (~US$ 107 por mês com o back e o front no ar).
 
-O front precisa do endereço da API **no build** da imagem, e esse endereço é o do ALB. Por isso o ALB sobe antes das imagens:
+O front precisa do endereço da API **no build** da imagem, e esse endereço é o do CloudFront da API (HTTPS, na frente do ALB). Por isso o ALB e o CloudFront sobem antes das imagens:
 
 ```sh
 BACK_TAG=$(git -C ../solar-monitor rev-parse --short=7 develop)
 FRONT_TAG=$(git -C ../solar-monitor-web rev-parse --short=7 develop)
 
-# 1. Repositórios das imagens, parâmetros dos segredos e o ALB (com a rede)
+# 1. Rede inteira, ALB, CloudFront (HTTPS), repositórios das imagens e parâmetros dos segredos. A rede vai inteira:
+#    só com o ALB, o internet gateway e as rotas ficariam de fora, e a AWS não cria ALB público em VPC sem internet
+#    gateway. O CloudFront leva uns 3 minutos para publicar.
 terraform apply -var backend_image_tag=$BACK_TAG -var frontend_image_tag=$FRONT_TAG \
-  -target=module.backend_ecr -target=module.frontend_ecr -target=module.backend_secrets -target=module.alb
+  -target=module.network -target=module.alb -target=module.frontend_cdn -target=module.backend_cdn \
+  -target=module.backend_ecr -target=module.frontend_ecr -target=module.backend_secrets
 
 # 2. Credenciais da Sungrow, copiadas do .env do backend (os JWT o Terraform gera sozinho)
 scripts/backend-secrets.sh ../solar-monitor/.env
@@ -127,12 +131,12 @@ scripts/backend-secrets.sh ../solar-monitor/.env
 # 3. Primeiras imagens (ARM64), do develop de cada repositório
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text --profile ericles-dev)
 REGISTRY="$ACCOUNT.dkr.ecr.sa-east-1.amazonaws.com"
-API_URL="http://$(aws elbv2 describe-load-balancers --names solar-monitor-dev-alb --query 'LoadBalancers[0].DNSName' --output text --profile ericles-dev --region sa-east-1):8080"
+API_URL=$(terraform output -raw backend_url)   # https://<id>.cloudfront.net da API
 aws ecr get-login-password --profile ericles-dev --region sa-east-1 | docker login --username AWS --password-stdin "$REGISTRY"
 git -C ../solar-monitor checkout develop && git -C ../solar-monitor-web checkout develop
-docker build --platform linux/arm64 -t "$REGISTRY/solar-monitor-api:$BACK_TAG" ../solar-monitor
+docker build --provenance=false --platform linux/arm64 -t "$REGISTRY/solar-monitor-api:$BACK_TAG" ../solar-monitor
 docker push "$REGISTRY/solar-monitor-api:$BACK_TAG"
-docker build --platform linux/arm64 --build-arg NEXT_PUBLIC_API_URL="$API_URL" -t "$REGISTRY/solar-monitor-web:$FRONT_TAG" ../solar-monitor-web
+docker build --provenance=false --platform linux/arm64 --build-arg NEXT_PUBLIC_API_URL="$API_URL" -t "$REGISTRY/solar-monitor-web:$FRONT_TAG" ../solar-monitor-web
 docker push "$REGISTRY/solar-monitor-web:$FRONT_TAG"
 
 # 4. O resto: banco (~10 min), os dois serviços e os papéis do deploy pelo GitHub
@@ -184,7 +188,7 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb ecs_cluster avatars database email ecr ecs_service backend_secrets github_deploy; do
+for m in budget network alb cdn ecs_cluster avatars database email ecr ecs_service backend_secrets github_deploy; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```
