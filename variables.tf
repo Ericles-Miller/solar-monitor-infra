@@ -59,13 +59,24 @@ variable "backend_listener_port" {
 
 variable "mail_sender_email" {
   type        = string
-  description = "Remetente dos e-mails do backend (MAIL_FROM). Vem de TF_VAR_mail_sender_email, fora do repositório"
+  description = "Conta do Gmail que envia os e-mails do backend (MAIL_FROM e login do SMTP). Vem de TF_VAR_mail_sender_email, fora do repositório"
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.mail_sender_email))
+    error_message = "Informe um e-mail válido."
+  }
 }
 
-variable "mail_test_recipients" {
-  type        = list(string)
-  description = "Destinatários de teste enquanto o SES está no sandbox. Vem de TF_VAR_mail_test_recipients, fora do repositório"
-  default     = []
+variable "mail_smtp_host" {
+  type        = string
+  description = "Servidor SMTP do backend (MAIL_HOST)"
+  default     = "smtp.gmail.com"
+}
+
+variable "mail_smtp_port" {
+  type        = number
+  description = "Porta do SMTP, com STARTTLS (MAIL_PORT; MAIL_SECURE=false)"
+  default     = 587
 }
 
 variable "backend_image_tag" {

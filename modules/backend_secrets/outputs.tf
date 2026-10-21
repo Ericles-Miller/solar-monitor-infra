@@ -3,6 +3,7 @@ output "parameter_arns" {
     {
       JWT_ACCESS_SECRET  = aws_ssm_parameter.jwt_access.arn
       JWT_REFRESH_SECRET = aws_ssm_parameter.jwt_refresh.arn
+      MAIL_PASSWORD      = aws_ssm_parameter.mail_password.arn
     },
     { for name, parameter in aws_ssm_parameter.sungrow : name => parameter.arn },
   )

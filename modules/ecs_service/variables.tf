@@ -91,7 +91,7 @@ variable "ecs_service_security_group_ids" {
 
 variable "ecs_service_assign_public_ip" {
   type        = bool
-  description = "IP público na tarefa: sem NAT, é por ele que a tarefa sai para a internet (ECR, Sungrow, SES)"
+  description = "IP público na tarefa: sem NAT, é por ele que a tarefa sai para a internet (ECR, Sungrow, SMTP)"
   default     = true
 }
 

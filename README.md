@@ -29,7 +29,6 @@ Módulos de hoje:
 | `ecs_cluster` | MS-88 | Cluster ECS (Fargate) e os grupos de log de cada serviço |
 | `avatars` | MS-90 | Bucket S3 dos avatares: leitura pública só de `avatars/*`, sem ACL, criptografado, sem versões e só por HTTPS |
 | `database` | MS-89 | RDS PostgreSQL 15 nas sub-redes privadas; senha gerada pelo Terraform, fora do estado, no Parameter Store, sem troca automática |
-| `email` | MS-91 | SES: remetente verificado, usuário SMTP que só envia com ele e os parâmetros `MAIL_USER` e `MAIL_PASSWORD` (preenchidos por `scripts/ses-smtp-credentials.sh`) |
 | `ecr` | MS-28 | Repositório de imagens com tag imutável, scan ao enviar e só as 10 últimas imagens |
 | `ecs_service` | MS-28 | Serviço Fargate genérico atrás do ALB: papéis IAM, task definition com segredos do Parameter Store, health check, ECS Exec e rollback automático |
 | `backend_secrets` | MS-28 | Segredos do backend: JWT gerados pelo Terraform e as credenciais da Sungrow (preenchidas por `scripts/backend-secrets.sh`) |
@@ -77,22 +76,23 @@ export TF_VAR_budget_alert_emails='["voce@exemplo.com"]'
 - Para trocar quem recebe, mude a variável e rode `plan` + `apply`: a assinatura só muda na AWS depois do `apply`. Quem rodar o `apply` com outro valor troca os destinatários.
 - O e-mail fica gravado no estado (no S3), não no git.
 
-### 3. Remetente dos e-mails
+### 3. Remetente dos e-mails (SMTP do Gmail)
 
-Como o e-mail do alerta, o remetente do backend e os destinatários de teste do sandbox do SES vêm de variáveis de ambiente:
+O backend manda os e-mails (confirmação de conta, esqueci a senha, alarmes) pelo **SMTP do Gmail** (`smtp.gmail.com:587`), com uma conta do Gmail como remetente. Ele entrega para qualquer endereço, até ~500 e-mails por dia. Desde 21/10/2026 o SES não é usado.
 
-```sh
-export TF_VAR_mail_sender_email='voce@exemplo.com'
-export TF_VAR_mail_test_recipients='["outro@exemplo.com"]'   # opcional
-```
-
-Depois do primeiro `apply`, a AWS manda um link de confirmação para cada endereço: clique nele. Em seguida, rode uma vez:
+Como o e-mail do alerta, a conta que envia vem de uma variável de ambiente:
 
 ```sh
-scripts/ses-smtp-credentials.sh
+export TF_VAR_mail_sender_email='voce@gmail.com'
 ```
 
-Ele cria a chave do usuário SMTP e grava `MAIL_USER` e `MAIL_PASSWORD` no Parameter Store, sem mostrar nada. Para trocar a chave: `scripts/ses-smtp-credentials.sh --replace` e reinicie o backend.
+A conta precisa de uma **senha de app** (<https://myaccount.google.com/apppasswords>, com a verificação em duas etapas ligada). Depois do primeiro `apply`, grave-a uma vez:
+
+```sh
+scripts/mail-password.sh
+```
+
+O script pede a senha sem mostrá-la e a grava em `MAIL_PASSWORD` no Parameter Store. Para trocar, gere outra senha de app, rode o script de novo e reinicie o backend.
 
 ### 4. Liberar o custo na conta de gerenciamento (manual, uma vez)
 
@@ -125,8 +125,9 @@ terraform apply -var backend_image_tag=$BACK_TAG -var frontend_image_tag=$FRONT_
   -target=module.network -target=module.alb -target=module.frontend_cdn -target=module.backend_cdn \
   -target=module.backend_ecr -target=module.frontend_ecr -target=module.backend_secrets
 
-# 2. Credenciais da Sungrow, copiadas do .env do backend (os JWT o Terraform gera sozinho)
+# 2. Credenciais da Sungrow, copiadas do .env do backend (os JWT o Terraform gera sozinho), e a senha de app do Gmail
 scripts/backend-secrets.sh ../solar-monitor/.env
+scripts/mail-password.sh
 
 # 3. Primeiras imagens (ARM64), do develop de cada repositório
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text --profile ericles-dev)
@@ -188,7 +189,7 @@ Sem acesso à AWS ainda dá para validar: `terraform init -backend=false` e depo
 Os módulos com pasta `tests/` têm testes que rodam **sem acesso à AWS** (provider simulado):
 
 ```sh
-for m in budget network alb cdn ecs_cluster avatars database email ecr ecs_service backend_secrets github_deploy; do
+for m in budget network alb cdn ecs_cluster avatars database ecr ecs_service backend_secrets github_deploy; do
   terraform -chdir=modules/$m init -backend=false && terraform -chdir=modules/$m test
 done
 ```
@@ -200,7 +201,7 @@ Cada módulo tem o próprio `.terraform.lock.hcl`, **cópia do lock da raiz**, p
 - **Publicar versão nova:** merge ou push na `develop` do repositório. O workflow testa, gera a imagem com a tag do commit, publica e espera o serviço ficar saudável. Se a versão nova não subir, o ECS volta sozinho para a anterior e o workflow falha.
 - **Rollback:** em **Actions**, abra a execução do commit bom e **Re-run all jobs**. A imagem daquele commit já está no ECR, então o workflow pula o build e só publica. Sem o GitHub: `aws ecs update-service --cluster solar-monitor-dev --service solar-monitor-dev-api --task-definition solar-monitor-dev-api:<revisão anterior>`.
 - **Mudar uma variável do backend (ou acrescentar um segredo):** mude no Terraform e aplique; a revisão nova da task definition entra no próximo deploy do CI. Para valer na hora, rode de novo o último workflow da `develop` (**Re-run all jobs**): ele parte da revisão mais nova. (O `--force-new-deployment` não serve aqui: ele reinicia com a revisão que já está no ar.)
-- **Trocar um segredo:** JWT e senha do banco: aumente `backend_secrets_jwt_version` ou `database_password_version`, aplique e reinicie o backend. Sungrow: `scripts/backend-secrets.sh`. SMTP: `scripts/ses-smtp-credentials.sh --replace`. Depois, `--force-new-deployment`.
+- **Trocar um segredo:** JWT e senha do banco: aumente `backend_secrets_jwt_version` ou `database_password_version`, aplique e reinicie o backend. Sungrow: `scripts/backend-secrets.sh`. Senha do SMTP: `scripts/mail-password.sh`. Depois, `--force-new-deployment`.
 - **Pausar o dev para economizar:** `aws ecs update-service ... --desired-count 0` no backend (e no front) e `aws rds stop-db-instance --db-instance-identifier solar-monitor-dev-db`. Parado, o RDS só cobra o disco; a AWS religa sozinha depois de 7 dias. Para voltar: `aws rds start-db-instance ...` e `--desired-count 1`. O próximo `apply` também volta o backend para 1 tarefa.
 - **Logs:** `aws logs tail /ecs/solar-monitor-dev/api --follow --profile ericles-dev --region sa-east-1`.
 - **Dados reais da UFV JAC 03:** não desvincular a usina nem excluir a conta que a tem, e não rodar `destroy` (o banco tem proteção contra exclusão e snapshot final). Com o backend do dev no ar, o backend local não deve coletar junto (`COLLECTOR_INTERVAL_MINUTES` bem alto no `.env`), para não dobrar as chamadas à Sungrow.
