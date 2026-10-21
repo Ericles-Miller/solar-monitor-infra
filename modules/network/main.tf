@@ -164,10 +164,10 @@ resource "aws_vpc_security_group_ingress_rule" "backend_from_alb" {
   to_port                      = var.network_backend_port
 }
 
-# Backend sai para qualquer lugar: Sungrow, SES (SMTP), ECR, S3, Parameter Store e o RDS.
+# Backend sai para qualquer lugar: Sungrow, SMTP do Gmail, ECR, S3, Parameter Store e o RDS.
 resource "aws_vpc_security_group_egress_rule" "backend_to_anywhere" {
   security_group_id = aws_security_group.backend.id
-  description       = "Saida livre (Sungrow, SES, ECR, S3, SSM, RDS)"
+  description       = "Saida livre (Sungrow, SMTP, ECR, S3, SSM, RDS)"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }

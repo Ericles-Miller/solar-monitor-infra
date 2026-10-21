@@ -2,7 +2,9 @@
 # - JWT: gerados aqui uma vez, por atributo write-only. Sem troca automática (trocar = aumentar a versão, aplicar e
 #   reiniciar o backend; quem estiver logado faz login de novo).
 # - Sungrow: nascem com valor provisório write-only; o valor real vem do .env do backend por scripts/backend-secrets.sh.
-# A senha do banco (MS-89) e o SMTP (MS-91) têm parâmetros próprios nos módulos database e email.
+# - Senha do SMTP (senha de app do Gmail, desde 21/10/2026): valor provisório write-only; o real é digitado em
+#   scripts/mail-password.sh, que não o mostra.
+# A senha do banco (MS-89) tem parâmetro próprio no módulo database.
 
 locals {
   sungrow_names = ["SUNGROW_APPKEY", "SUNGROW_ACCESS_KEY", "SUNGROW_USER_ACCOUNT", "SUNGROW_USER_PASSWORD"]
@@ -47,6 +49,18 @@ resource "aws_ssm_parameter" "sungrow" {
   type             = "SecureString"
   value_wo         = "definir-com-scripts/backend-secrets.sh"
   value_wo_version = 1
+
+  tags = var.backend_secrets_tags
+}
+
+resource "aws_ssm_parameter" "mail_password" {
+  name             = "${var.backend_secrets_parameter_prefix}/MAIL_PASSWORD"
+  description      = "Senha do SMTP (MAIL_PASSWORD; senha de app do Gmail). Valor gravado por scripts/mail-password.sh"
+  type             = "SecureString"
+  value_wo         = "definir-com-scripts/mail-password.sh"
+  # 2: o parâmetro veio do módulo email (SES) com a versão 1, e o provider não troca a descrição de um parâmetro
+  # write-only sem mandar um valor junto. O valor do SES já não valia (a chave foi apagada em 21/10/2026).
+  value_wo_version = 2
 
   tags = var.backend_secrets_tags
 }
