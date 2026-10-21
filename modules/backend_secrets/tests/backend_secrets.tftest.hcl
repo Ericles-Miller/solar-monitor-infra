@@ -6,12 +6,17 @@ variables {
   backend_secrets_parameter_prefix = "/solar-monitor/dev"
 }
 
-run "seis_segredos_no_parameter_store" {
+run "sete_segredos_no_parameter_store" {
   command = plan
 
   assert {
-    condition     = toset(keys(output.parameter_arns)) == toset(["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "SUNGROW_APPKEY", "SUNGROW_ACCESS_KEY", "SUNGROW_USER_ACCOUNT", "SUNGROW_USER_PASSWORD"])
-    error_message = "O backend precisa dos dois JWT e das quatro credenciais da Sungrow."
+    condition     = toset(keys(output.parameter_arns)) == toset(["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "MAIL_PASSWORD", "SUNGROW_APPKEY", "SUNGROW_ACCESS_KEY", "SUNGROW_USER_ACCOUNT", "SUNGROW_USER_PASSWORD"])
+    error_message = "O backend precisa dos dois JWT, da senha do SMTP e das quatro credenciais da Sungrow."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.mail_password.name == "/solar-monitor/dev/MAIL_PASSWORD" && aws_ssm_parameter.mail_password.type == "SecureString"
+    error_message = "A senha do SMTP fica em /solar-monitor/dev/MAIL_PASSWORD, como SecureString."
   }
 
   assert {
@@ -29,7 +34,7 @@ run "nenhum_valor_no_estado" {
   command = plan
 
   assert {
-    condition     = alltrue([for parameter in concat([aws_ssm_parameter.jwt_access, aws_ssm_parameter.jwt_refresh], values(aws_ssm_parameter.sungrow)) : parameter.value_wo == null])
+    condition     = alltrue([for parameter in concat([aws_ssm_parameter.jwt_access, aws_ssm_parameter.jwt_refresh, aws_ssm_parameter.mail_password], values(aws_ssm_parameter.sungrow)) : parameter.value_wo == null])
     error_message = "Os valores são write-only: não vão ao estado."
   }
 

@@ -119,16 +119,14 @@ output "database" {
 
 output "mail" {
   value = {
-    host                = module.email.smtp_host
-    port                = module.email.smtp_port
-    secure              = false
-    from                = module.email.mail_from
-    parameter_names     = module.email.parameter_names
-    smtp_user_name      = module.email.smtp_user_name
-    verified_identities = module.email.verified_identities
+    host                    = var.mail_smtp_host
+    port                    = var.mail_smtp_port
+    secure                  = false
+    from                    = local.backend_environment.MAIL_FROM
+    password_parameter_name = "/${local.project}/${var.environment}/MAIL_PASSWORD"
   }
   sensitive   = false
-  description = "E-mail do backend: MAIL_HOST, MAIL_PORT, MAIL_SECURE, MAIL_FROM e os parâmetros de MAIL_USER e MAIL_PASSWORD"
+  description = "E-mail do backend (SMTP do Gmail): MAIL_HOST, MAIL_PORT, MAIL_SECURE, MAIL_FROM e o parâmetro de MAIL_PASSWORD"
 }
 
 output "backend" {

@@ -16,18 +16,21 @@ locals {
     PORT = tostring(var.backend_port)
     TZ   = "America/Sao_Paulo"
     # Dois proxies na frente: o CloudFront (põe o IP do cliente no X-Forwarded-For) e o ALB.
-    TRUST_PROXY_HOPS               = "2"
-    DB_HOST                        = module.database.address
-    DB_PORT                        = tostring(module.database.port)
-    DB_NAME                        = module.database.db_name
-    DB_USERNAME                    = module.database.username
-    DB_SSL                         = "true"
-    CORS_ORIGINS                   = join(",", [local.frontend_url, local.alb_frontend_url])
-    FRONTEND_URL                   = local.frontend_url
-    MAIL_HOST                      = module.email.smtp_host
-    MAIL_PORT                      = tostring(module.email.smtp_port)
+    TRUST_PROXY_HOPS = "2"
+    DB_HOST          = module.database.address
+    DB_PORT          = tostring(module.database.port)
+    DB_NAME          = module.database.db_name
+    DB_USERNAME      = module.database.username
+    DB_SSL           = "true"
+    CORS_ORIGINS     = join(",", [local.frontend_url, local.alb_frontend_url])
+    FRONTEND_URL     = local.frontend_url
+    # SMTP do Gmail desde 21/10/2026 (o SES saiu). Porta 587 com STARTTLS; o login é o próprio endereço, e a senha de
+    # app vai no bloco secrets.
+    MAIL_HOST                      = var.mail_smtp_host
+    MAIL_PORT                      = tostring(var.mail_smtp_port)
     MAIL_SECURE                    = "false"
-    MAIL_FROM                      = module.email.mail_from
+    MAIL_USER                      = var.mail_sender_email
+    MAIL_FROM                      = "${var.app_name} <${var.mail_sender_email}>"
     APP_NAME                       = var.app_name
     AWS_REGION                     = var.aws_region
     S3_BUCKET                      = module.avatars.bucket_name
@@ -108,16 +111,6 @@ module "database" {
   database_password_parameter_name = "/${local.project}/${var.environment}/DB_PASSWORD"
 }
 
-# E-mail do backend pelo SES (MS-91). Sem domínio, o remetente é um endereço verificado (por enquanto, só para teste).
-module "email" {
-  source                 = "./modules/email"
-  email_name_prefix      = local.name_prefix
-  email_region           = var.aws_region
-  email_sender_address   = var.mail_sender_email
-  email_test_recipients  = var.mail_test_recipients
-  email_parameter_prefix = "/${local.project}/${var.environment}"
-}
-
 # Backend no ECS (MS-28): imagem no ECR, segredos no Parameter Store e uma tarefa atrás do ALB (:8080 até a MS-30).
 module "backend_ecr" {
   source              = "./modules/ecr"
@@ -127,6 +120,13 @@ module "backend_ecr" {
 module "backend_secrets" {
   source                           = "./modules/backend_secrets"
   backend_secrets_parameter_prefix = "/${local.project}/${var.environment}"
+}
+
+# O SES saiu em 21/10/2026 (o e-mail vai pelo SMTP do Gmail). O parâmetro da senha do SMTP já existia no módulo
+# email: muda de endereço no estado em vez de ser apagado e criado de novo com o mesmo nome.
+moved {
+  from = module.email.aws_ssm_parameter.smtp["MAIL_PASSWORD"]
+  to   = module.backend_secrets.aws_ssm_parameter.mail_password
 }
 
 module "backend" {
@@ -148,9 +148,7 @@ module "backend" {
   ecs_service_environment            = local.backend_environment
 
   ecs_service_secrets = merge(module.backend_secrets.parameter_arns, {
-    DB_PASSWORD   = module.database.password_parameter_arn
-    MAIL_USER     = module.email.parameter_arns["MAIL_USER"]
-    MAIL_PASSWORD = module.email.parameter_arns["MAIL_PASSWORD"]
+    DB_PASSWORD = module.database.password_parameter_arn
   })
 
   # O backend grava e apaga avatares; nada além de avatars/*.
