@@ -158,7 +158,7 @@ module "backend_github_deploy" {
 }
 
 # Front no ECS (MS-29): imagem no ECR e uma tarefa atrás do ALB (:80 até a MS-30). Sem segredos: o endereço da API
-# entra no build da imagem (NEXT_PUBLIC_API_URL = saída backend_url), e a porta e o HOSTNAME vêm do Dockerfile.
+# entra no build da imagem (NEXT_PUBLIC_API_URL = saída backend_url), e a porta vem do Dockerfile.
 module "frontend_ecr" {
   source              = "./modules/ecr"
   ecr_repository_name = "${local.project}-web"
@@ -180,6 +180,11 @@ module "frontend" {
   ecs_service_target_group_arn                  = module.alb.frontend_target_group_arn
   ecs_service_health_check_path                 = "/login"
   ecs_service_health_check_grace_period_seconds = 60
+
+  # O Fargate troca o HOSTNAME=0.0.0.0 do Dockerfile pelo nome da tarefa (ip-10-0-x-x...), e o Next standalone
+  # escuta só nesse endereço: o ALB passa, mas o health check do contêiner (127.0.0.1) falha e o ECS derruba a
+  # tarefa a cada ~2,5 min. A variável da task definition vale mais que a do Fargate.
+  ecs_service_environment = { HOSTNAME = "0.0.0.0" }
 }
 
 # Deploy do front pelo GitHub Actions (MS-94): só a develop do solar-monitor-web publica no dev.
