@@ -165,6 +165,14 @@ exec_api "node dist/scripts/backfill-manufacturer-events.js 1569493"    # ou --f
 
 Se a Sungrow cortar no meio (limite de chamadas), o comando diz o mês em que parou e como continuar. Rodar de novo não duplica evento.
 
+**O histórico de energia** (MS-77, as barras por mês, ano e vida útil) se completa **sozinho**. Às 00:30, o backend fecha o dia anterior e busca até 60 dias antigos por usina. Na UFV JAC 03, ~565 dias levam ~10 noites, sem ninguém rodar nada. Para ter tudo de uma vez (~20 min, 1 chamada por dia):
+
+```sh
+exec_api "node dist/scripts/energy-backfill.js 1569493"                 # ou --from AAAA-MM-DD
+```
+
+`ENERGY_NIGHTLY_BACKFILL_DAYS` (padrão 60, 0 desliga) muda quantos dias o job busca por noite.
+
 ### 6. Ligar o CI/CD (GitHub Actions)
 
 O workflow `.github/workflows/ci.yml` do `solar-monitor` e do `solar-monitor-web`: push na **`develop` publica no dev**; push na **`main` só valida** (testes e semantic release). Em cada repositório, em **Settings → Secrets and variables → Actions**:
