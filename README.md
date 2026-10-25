@@ -157,6 +157,14 @@ for k in 1569493_1_1_1 1569493_1_2_1 1569493_1_3_1 1569493_1_4_1 1569493_1_5_1; 
 done
 ```
 
+O `import-plant` de uma usina **nova** já traz o histórico de eventos da Sungrow desde o comissionamento (MS-101): ~20 chamadas e menos de 1 min. Para uma usina importada **antes** dessa versão (como a UFV JAC 03, importada em 21/10/2026), rode uma vez:
+
+```sh
+exec_api "node dist/scripts/backfill-manufacturer-events.js 1569493"    # ou --from AAAA-MM
+```
+
+Se a Sungrow cortar no meio (limite de chamadas), o comando diz o mês em que parou e como continuar. Rodar de novo não duplica evento.
+
 ### 6. Ligar o CI/CD (GitHub Actions)
 
 O workflow `.github/workflows/ci.yml` do `solar-monitor` e do `solar-monitor-web`: push na **`develop` publica no dev**; push na **`main` só valida** (testes e semantic release). Em cada repositório, em **Settings → Secrets and variables → Actions**:
